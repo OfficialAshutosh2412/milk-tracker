@@ -51,7 +51,7 @@ export async function getEntries(month?: number, year?: number) {
       extraItems: true,
     },
     orderBy: {
-      date: 'desc',
+      date: 'asc',
     },
   });
   

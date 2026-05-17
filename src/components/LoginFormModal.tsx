@@ -9,9 +9,13 @@ import { useRouter } from "next/navigation";
 export default function LoginFormModal({
   isOpen,
   onClose,
+  setGlobalLoading,
+  startTransition,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  setGlobalLoading: React.Dispatch<React.SetStateAction<{isLoading: boolean, message: string}>>;
+  startTransition: React.TransitionStartFunction;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -21,14 +25,17 @@ export default function LoginFormModal({
     e.preventDefault();
     setError("");
     setIsLoading(true);
+    setGlobalLoading({ isLoading: true, message: "Logging in, please wait..." });
 
     try {
       const formData = new FormData(e.currentTarget);
       const res = await login(formData);
       
       if (res?.success) {
+        startTransition(() => {
+          router.refresh();
+        });
         onClose();
-        router.refresh();
       } else {
         setError(res?.error || "Invalid credentials");
       }
@@ -36,6 +43,7 @@ export default function LoginFormModal({
       setError("Something went wrong");
     } finally {
       setIsLoading(false);
+      setGlobalLoading({ isLoading: false, message: "" });
     }
   };
 

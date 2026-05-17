@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { format, getDaysInMonth } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Download, FileText, ChevronLeft, ChevronRight, Edit2, Trash2, Milk, Filter } from "lucide-react";
@@ -44,6 +44,8 @@ export default function DashboardClient({
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
   const [filter, setFilter] = useState("All");
+  const [globalLoading, setGlobalLoading] = useState({ isLoading: false, message: "" });
+  const [isPending, startTransition] = useTransition();
   
   // Filter entries
   const filteredEntries = useMemo(() => {
@@ -194,7 +196,12 @@ export default function DashboardClient({
 
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this entry?")) {
-      await deleteEntry(id);
+      setGlobalLoading({ isLoading: true, message: "Deleting entry, please wait..." });
+      try {
+        await deleteEntry(id);
+      } finally {
+        setGlobalLoading({ isLoading: false, message: "" });
+      }
     }
   };
 
@@ -235,7 +242,16 @@ export default function DashboardClient({
                 <span>Add Entry</span>
               </button>
               <button 
-                onClick={async () => { await logout(); router.refresh(); }}
+                onClick={async () => { 
+                  if (confirm("Are you sure you want to log out?")) {
+                    setGlobalLoading({ isLoading: true, message: "Logging out, please wait..." });
+                    await logout(); 
+                    startTransition(() => {
+                      router.refresh(); 
+                    });
+                    setGlobalLoading({ isLoading: false, message: "" });
+                  }
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-red-500 hover:text-white text-slate-200 rounded-xl transition-all shadow-sm"
               >
                 <span>Logout</span>
@@ -370,16 +386,16 @@ export default function DashboardClient({
                       </td>
                       {isAdmin && (
                         <td className="p-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex justify-end gap-2">
                             <button 
                               onClick={() => { setEditingEntry(entry); setIsModalOpen(true); }}
-                              className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
+                              className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded-md transition-colors"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button 
                               onClick={() => handleDelete(entry.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+                              className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -407,11 +423,22 @@ export default function DashboardClient({
         onClose={() => setIsModalOpen(false)} 
         editingEntry={editingEntry} 
         defaultDate={new Date(year, month, new Date().getDate())}
+        setGlobalLoading={setGlobalLoading}
       />
       <LoginFormModal 
         isOpen={isLoginModalOpen} 
         onClose={() => setIsLoginModalOpen(false)} 
+        setGlobalLoading={setGlobalLoading}
+        startTransition={startTransition}
       />
+      {(globalLoading.isLoading || isPending) && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+          <p className="text-slate-200 font-medium">
+            {globalLoading.isLoading ? globalLoading.message : "Refreshing page, please wait..."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

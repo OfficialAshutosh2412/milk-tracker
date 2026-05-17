@@ -29,11 +29,13 @@ export default function EntryFormModal({
   onClose,
   editingEntry,
   defaultDate,
+  setGlobalLoading,
 }: {
   isOpen: boolean;
   onClose: () => void;
   editingEntry: any;
   defaultDate: Date;
+  setGlobalLoading: React.Dispatch<React.SetStateAction<{isLoading: boolean, message: string}>>;
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -78,6 +80,7 @@ export default function EntryFormModal({
 
   const onSubmit = async (data: EntryFormValues) => {
     setIsSubmitting(true);
+    setGlobalLoading({ isLoading: true, message: editingEntry ? "Updating entry, please wait..." : "Adding entry, please wait..." });
     try {
       await addEntry(data);
       onClose();
@@ -86,6 +89,7 @@ export default function EntryFormModal({
       alert("Failed to save entry");
     } finally {
       setIsSubmitting(false);
+      setGlobalLoading({ isLoading: false, message: "" });
     }
   };
 
