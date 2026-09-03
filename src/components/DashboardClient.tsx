@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect } from "react";
 import { format, getDaysInMonth } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Download, FileText, ChevronLeft, ChevronRight, Edit2, Trash2, Milk, Filter } from "lucide-react";
+import { Plus, Download, FileText, ChevronLeft, ChevronRight, Edit2, Trash2, Milk, Filter, CalendarRange, CalendarDays, LogOut } from "lucide-react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useRouter } from "next/navigation";
 import EntryFormModal from "./EntryFormModal";
+import CalendarPickerModal from "./CalendarPickerModal";
 import { deleteEntry, logout } from "@/app/actions";
 import LoginFormModal from "./LoginFormModal";
 
@@ -41,11 +42,22 @@ export default function DashboardClient({
 }) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCalendarPickerOpen, setIsCalendarPickerOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"single" | "range">("single");
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
   const [filter, setFilter] = useState("All");
   const [globalLoading, setGlobalLoading] = useState({ isLoading: false, message: "" });
   const [isPending, startTransition] = useTransition();
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 15);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
   
   // Filter entries
   const filteredEntries = useMemo(() => {
@@ -122,18 +134,29 @@ export default function DashboardClient({
       const milkTotal = e.milkQuantity * e.milkPricePerLitre;
       const extrasTotal = e.extraItems.reduce((sum, item) => sum + item.price, 0);
       
+      const hasExtras = e.extraItems && e.extraItems.length > 0;
+      
       const row = worksheet.addRow({
         sno: index + 1,
         date: format(new Date(e.date), 'dd MMM yyyy'),
         milk: e.milkQuantity,
         rate: `₹${e.milkPricePerLitre}`,
         milkTotal: `₹${milkTotal}`,
-        extras: extraItemsStr,
+        extras: extraItemsStr || "-",
         extrasTotal: `₹${extrasTotal}`,
         grandTotal: `₹${milkTotal + extrasTotal}`
       });
 
-      if (row.number % 2 === 0) {
+      if (hasExtras) {
+        row.eachCell((cell) => {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFFEF3C7" }, // Soft warm amber highlight for rows with extra items
+          };
+          cell.font = { color: { argb: "FF78350F" }, bold: cell.col === 8 };
+        });
+      } else if (row.number % 2 === 0) {
         row.eachCell((cell) => {
           cell.fill = {
             type: "pattern",
@@ -170,28 +193,103 @@ export default function DashboardClient({
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
-    doc.text(`Milk Tracker - ${format(new Date(year, month), 'MMMM yyyy')} (${filter})`, 14, 15);
+
+    // Document Title & Metadata
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text("Milk Tracker - Monthly Report", 14, 14);
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Period: ${format(new Date(year, month), "MMMM yyyy")}  |  Filter: ${filter}  |  Grand Total: Rs. ${stats.grandTotal}`,
+      14,
+      20
+    );
     
     const tableData = filteredEntries.map((e, index) => {
       const milkTotal = e.milkQuantity * e.milkPricePerLitre;
       const extrasTotal = e.extraItems.reduce((sum, item) => sum + item.price, 0);
+
+      // Detailed other items list with quantity and price
+      const extraItemsDetailed = e.extraItems && e.extraItems.length > 0
+        ? e.extraItems
+            .map((item) => `${item.name} (${item.quantity}gm - Rs. ${item.price})`)
+            .join("\n")
+        : "-";
+
       return [
         (index + 1).toString(),
-        format(new Date(e.date), 'dd MMM yyyy'),
-        e.milkQuantity.toString(),
+        format(new Date(e.date), "dd MMM yyyy"),
+        `${e.milkQuantity} L`,
         `Rs. ${milkTotal}`,
+        extraItemsDetailed,
         `Rs. ${extrasTotal}`,
-        `Rs. ${milkTotal + extrasTotal}`
+        `Rs. ${milkTotal + extrasTotal}`,
       ];
     });
 
+    const footData = [
+      [
+        "",
+        `TOTAL (${filteredEntries.length} entries)`,
+        `${stats.totalMilkQuantity} L`,
+        `Rs. ${stats.totalMilkCost}`,
+        "",
+        `Rs. ${stats.totalExtrasCost}`,
+        `Rs. ${stats.grandTotal}`,
+      ],
+    ];
+
     autoTable(doc, {
-      head: [['S.No', 'Date', 'Milk (L)', 'Milk Total', 'Extras Total', 'Grand Total']],
+      head: [["#", "Date", "Milk (L)", "Milk Total", "Other Items (Item, Qty & Price)", "Extras Total", "Grand Total"]],
       body: tableData,
-      startY: 20,
+      foot: footData,
+      startY: 25,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.5,
+        valign: "middle",
+        overflow: "linebreak",
+      },
+      headStyles: {
+        fillColor: [37, 99, 235], // Blue-600
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      footStyles: {
+        fillColor: [15, 23, 42], // Slate-900
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 10 },
+        1: { halign: "center", cellWidth: 24 },
+        2: { halign: "center", cellWidth: 16 },
+        3: { halign: "right", cellWidth: 22 },
+        4: { halign: "left", cellWidth: 70 }, // Extra items & prices column
+        5: { halign: "right", cellWidth: 22 },
+        6: { halign: "right", cellWidth: 26, fontStyle: "bold" },
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      didParseCell: (data) => {
+        if (data.section === "body") {
+          const entry = filteredEntries[data.row.index];
+          if (entry && entry.extraItems && entry.extraItems.length > 0) {
+            // Warm amber highlight for rows where other items were bought
+            data.cell.styles.fillColor = [254, 243, 199]; // Amber-100
+            data.cell.styles.textColor = [120, 53, 15];   // Amber-900
+          }
+        }
+      },
+      margin: { top: 25, left: 10, right: 10 },
     });
     
-    doc.save(`Milk_Tracker_${format(new Date(year, month), 'MMM_yyyy')}.pdf`);
+    doc.save(`Milk_Tracker_${format(new Date(year, month), "MMM_yyyy")}.pdf`);
   };
 
   const handleDelete = async (id: string) => {
@@ -209,64 +307,131 @@ export default function DashboardClient({
 
   return (
     <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="sticky top-2 md:top-4 z-50 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/80 p-4 rounded-2xl border border-slate-800/50 backdrop-blur-xl shadow-lg shadow-black/20">
-        <div className="flex items-center gap-4">
-          <button onClick={handlePrevMonth} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-            <ChevronLeft className="w-5 h-5 text-slate-400" />
-          </button>
-          <h1 className="text-2xl font-semibold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent w-40 text-center">
-            {format(new Date(year, month), 'MMMM yyyy')}
-          </h1>
-          <button onClick={handleNextMonth} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-            <ChevronRight className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-3 justify-center">
-          <button onClick={handleExportExcel} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all shadow-sm">
-            <FileText className="w-4 h-4" />
-            <span className="hidden sm:inline">Excel</span>
-          </button>
-          <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all shadow-sm">
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">PDF</span>
-          </button>
-          {isAdmin ? (
-            <>
+      {/* Sticky Header with Centered Month Navigator & Actions in New Line */}
+      <header
+        className={`sticky top-2 md:top-4 z-50 rounded-2xl p-3 md:p-4 space-y-3 transition-all duration-300 ${
+          isScrolled
+            ? "bg-slate-950/95 border border-slate-700/60 backdrop-blur-2xl shadow-2xl shadow-black/60 ring-1 ring-white/5"
+            : "bg-slate-900/85 border border-slate-800/60 backdrop-blur-xl shadow-lg shadow-black/20"
+        }`}
+      >
+        {/* Top Row: Centered Month Navigator */}
+        <div className="flex items-center justify-between gap-3">
+          
+          {/* Left: Branding */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20 flex-shrink-0">
+              <Milk className="w-5 h-5" />
+            </div>
+            <div className="hidden sm:block">
+              <h2 className="text-sm font-bold tracking-tight text-slate-100">MilkTracker</h2>
+              <p className="text-[10px] text-slate-400">Daily Diary & Expense</p>
+            </div>
+          </div>
+
+          {/* Center: Month & Year Navigator (Prominently Centered at Top) */}
+          <div className="flex items-center justify-center gap-2 md:gap-3">
+            <button 
+              onClick={handlePrevMonth} 
+              aria-label="Previous month"
+              className="p-2 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-xl border border-slate-700/60 hover:border-indigo-500 transition-all shadow-sm hover:shadow-indigo-500/20"
+            >
+              <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
+            </button>
+            
+            <div className="text-center px-2">
+              <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent whitespace-nowrap">
+                {format(new Date(year, month), 'MMMM yyyy')}
+              </h1>
+            </div>
+
+            <button 
+              onClick={handleNextMonth} 
+              aria-label="Next month"
+              className="p-2 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-xl border border-slate-700/60 hover:border-indigo-500 transition-all shadow-sm hover:shadow-indigo-500/20"
+            >
+              <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
+            </button>
+          </div>
+
+          {/* Right: Export Tools & Login (if guest) */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button 
+              onClick={handleExportExcel} 
+              title="Export to Excel"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl transition-all border border-slate-700/50 text-xs font-medium"
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+            <button 
+              onClick={handleExportPDF} 
+              title="Export to PDF"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl transition-all border border-slate-700/50 text-xs font-medium"
+            >
+              <Download className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">PDF</span>
+            </button>
+
+            {!isAdmin && (
               <button 
-                onClick={() => { setEditingEntry(null); setIsModalOpen(true); }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                onClick={() => setIsLoginModalOpen(true)}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md shadow-blue-500/20 text-xs font-medium"
+              >
+                Admin Login
+              </button>
+            )}
+          </div>
+
+        </div>
+
+        {/* Second Row: Action Buttons & Red Logout Button (in new line in header) */}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-slate-800/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <button 
+                onClick={() => { setEditingEntry(null); setModalMode("single"); setIsModalOpen(true); }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md shadow-blue-500/20 text-xs font-medium"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add Entry</span>
               </button>
               <button 
-                onClick={async () => { 
-                  if (confirm("Are you sure you want to log out?")) {
-                    setGlobalLoading({ isLoading: true, message: "Logging out, please wait..." });
-                    await logout(); 
-                    startTransition(() => {
-                      router.refresh(); 
-                    });
-                    setGlobalLoading({ isLoading: false, message: "" });
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-red-500 hover:text-white text-slate-200 rounded-xl transition-all shadow-sm"
+                onClick={() => { setEditingEntry(null); setModalMode("range"); setIsModalOpen(true); }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-md shadow-indigo-500/20 text-xs font-medium"
               >
-                <span>Logout</span>
+                <CalendarRange className="w-4 h-4" />
+                <span>Date Range</span>
               </button>
-            </>
-          ) : (
+              <button 
+                onClick={() => setIsCalendarPickerOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl transition-all shadow-md shadow-purple-500/20 text-xs font-medium"
+              >
+                <CalendarDays className="w-4 h-4" />
+                <span>Pick Dates</span>
+              </button>
+            </div>
+
+            {/* Red Solid Filled Logout Button with Logout Icon */}
             <button 
-              onClick={() => setIsLoginModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+              onClick={async () => { 
+                if (confirm("Are you sure you want to log out?")) {
+                  setGlobalLoading({ isLoading: true, message: "Logging out, please wait..." });
+                  await logout(); 
+                  startTransition(() => {
+                    router.refresh(); 
+                  });
+                  setGlobalLoading({ isLoading: false, message: "" });
+                }
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl transition-all shadow-md shadow-red-500/20 text-xs font-medium ml-auto"
             >
-              <span>Admin Login</span>
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
             </button>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </header>
 
       {/* Analytics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -299,13 +464,22 @@ export default function DashboardClient({
       </div>
 
       {/* History Table */}
-      <div className="bg-slate-900/80 rounded-2xl border border-slate-800 overflow-hidden">
-        <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-lg font-medium text-slate-200">Daily Entries</h2>
+      <div className="bg-slate-900/80 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+        <div className="p-5 border-b border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+              Daily Entries
+              <span className="text-xs font-medium text-slate-400 bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-slate-700/50">
+                {filteredEntries.length} {filteredEntries.length === 1 ? "entry" : "entries"}
+              </span>
+            </h2>
+          </div>
           
           {/* Filters */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar">
-            <Filter className="w-4 h-4 text-slate-500" />
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0 hide-scrollbar">
+            <Filter className="w-4 h-4 text-slate-500 flex-shrink-0" />
             {filterOptions.map(opt => (
               <button
                 key={opt}
@@ -321,7 +495,7 @@ export default function DashboardClient({
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto table-scroll">
           <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
               <tr className="bg-slate-950/50 text-slate-400 text-sm">
@@ -340,6 +514,7 @@ export default function DashboardClient({
                   const milkTotal = entry.milkQuantity * entry.milkPricePerLitre;
                   const extrasTotal = entry.extraItems.reduce((sum, item) => sum + item.price, 0);
                   const dailyTotal = milkTotal + extrasTotal;
+                  const hasExtras = entry.extraItems && entry.extraItems.length > 0;
 
                   return (
                     <motion.tr 
@@ -347,10 +522,19 @@ export default function DashboardClient({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors group"
+                      className={`border-b transition-colors group ${
+                        hasExtras
+                          ? "bg-amber-500/[0.08] hover:bg-amber-500/[0.14] border-amber-500/30"
+                          : "border-slate-800/50 hover:bg-slate-800/20"
+                      }`}
                     >
                       <td className="p-4 text-slate-400 text-sm font-medium">
-                        {index + 1}
+                        <span className="flex items-center gap-1.5">
+                          {index + 1}
+                          {hasExtras && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Extra items bought" />
+                          )}
+                        </span>
                       </td>
                       <td className="p-4 text-slate-300">
                         {format(new Date(entry.date), 'dd MMM yyyy')}
@@ -362,27 +546,31 @@ export default function DashboardClient({
                       </td>
                       <td className="p-4 text-slate-400">₹{entry.milkPricePerLitre}</td>
                       <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
                           {entry.extraItems.length === 0 ? (
                             <span className="text-slate-500 text-sm">-</span>
                           ) : (
                             entry.extraItems.map(item => (
                               <span 
                                 key={item.id} 
-                                className={`inline-flex text-xs px-2 py-0.5 rounded-full border ${
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border font-medium ${
                                   filter !== "All" && item.name.toLowerCase().includes(filter.toLowerCase())
-                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                                    : "bg-slate-800 text-slate-300 border-slate-700"
+                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm"
+                                    : "bg-amber-500/20 text-amber-200 border-amber-500/30"
                                 }`}
                               >
-                                {item.name}({item.quantity}gm : ₹{item.price})
+                                <span>{item.name}</span>
+                                <span className="text-amber-400/80 text-[10px]">({item.quantity}gm)</span>
+                                <span className="text-amber-300 font-semibold">₹{item.price}</span>
                               </span>
                             ))
                           )}
                         </div>
                       </td>
                       <td className="p-4 font-medium text-slate-200">
-                        ₹{dailyTotal}
+                        <span className={hasExtras ? "text-amber-300 font-semibold" : "text-slate-200"}>
+                          ₹{dailyTotal}
+                        </span>
                       </td>
                       {isAdmin && (
                         <td className="p-4 text-right">
@@ -422,7 +610,16 @@ export default function DashboardClient({
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         editingEntry={editingEntry} 
+        initialMode={modalMode}
         defaultDate={new Date(year, month, new Date().getDate())}
+        setGlobalLoading={setGlobalLoading}
+      />
+      <CalendarPickerModal
+        isOpen={isCalendarPickerOpen}
+        onClose={() => setIsCalendarPickerOpen(false)}
+        initialMonth={month}
+        initialYear={year}
+        existingEntries={initialEntries}
         setGlobalLoading={setGlobalLoading}
       />
       <LoginFormModal 
