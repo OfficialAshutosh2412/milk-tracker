@@ -310,8 +310,8 @@ export default function DashboardClient({
       {/* Sticky Header with Centered Month Navigator & Actions in New Line */}
       <header
         className={`sticky top-2 md:top-4 z-50 rounded-2xl p-3 md:p-4 space-y-3 transition-all duration-300 ${isScrolled
-            ? "bg-slate-950/95 border border-slate-700/60 backdrop-blur-2xl shadow-2xl shadow-black/60 ring-1 ring-white/5"
-            : "bg-slate-900/85 border border-slate-800/60 backdrop-blur-xl shadow-lg shadow-black/20"
+          ? "bg-slate-950/95 border border-slate-700/60 backdrop-blur-2xl shadow-2xl shadow-black/60 ring-1 ring-white/5"
+          : "bg-slate-900/85 border border-slate-800/60 backdrop-blur-xl shadow-lg shadow-black/20"
           }`}
       >
         {/* Top Row: Centered Month Navigator */}
@@ -484,8 +484,8 @@ export default function DashboardClient({
                 key={opt}
                 onClick={() => setFilter(opt)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-all ${filter === opt
-                    ? "bg-blue-500 text-white shadow-md shadow-blue-500/20"
-                    : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                  ? "bg-blue-500 text-white shadow-md shadow-blue-500/20"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
                   }`}
               >
                 {opt}
@@ -521,8 +521,8 @@ export default function DashboardClient({
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       className={`border-b transition-colors group ${hasExtras
-                          ? "bg-amber-500/[0.08] hover:bg-amber-500/[0.14] border-amber-500/30"
-                          : "border-slate-800/50 hover:bg-slate-800/20"
+                        ? "bg-amber-500/[0.08] hover:bg-amber-500/[0.14] border-amber-500/30"
+                        : "border-slate-800/50 hover:bg-slate-800/20"
                         }`}
                     >
                       <td className="p-4 text-slate-400 text-sm font-medium">
@@ -551,8 +551,8 @@ export default function DashboardClient({
                               <span
                                 key={item.id}
                                 className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border font-medium ${filter !== "All" && item.name.toLowerCase().includes(filter.toLowerCase())
-                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm"
-                                    : "bg-amber-500/20 text-amber-200 border-amber-500/30"
+                                  ? "bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm"
+                                  : "bg-amber-500/20 text-amber-200 border-amber-500/30"
                                   }`}
                               >
                                 <span>{item.name}</span>
